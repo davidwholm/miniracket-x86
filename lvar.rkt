@@ -1,7 +1,5 @@
 #lang racket
 
-(require "util.rkt")
-
 ;;; struct definitions
 
 (struct Program
@@ -77,7 +75,7 @@
   #:transparent)
 
 (define example-prog
-  (Program '() (Let 'a (Int 52) (Prim '+ (list (Var 'a) (Prim '- (list (Int 52))))))))
+  (Program '() (Let 'a (Int 32) (Prim '+ (list (Var 'a) (Int 10))))))
 
 (define (uniquify-expr e [env '()])
   (match e
@@ -225,9 +223,9 @@
 
 (define (collect-locals->homes locals->types [offset 0])
   (cond
-    [(empty? locals->types) (values '() (if (zero? (modulo offset 16))
-                                            offset
-                                            (- offset (modulo offset 16))))]
+    [(empty? locals->types) (values '() (abs (if (zero? (modulo offset 16))
+                                                 offset
+                                                 (- offset (modulo offset 16)))))]
     [else
      (define local->type (first locals->types))
      (define new-offset (- offset (type->size (cdr local->type))))
@@ -282,24 +280,25 @@
     [(X86Program info blocks) (X86Program info (for/list ([(label block) (in-dict blocks)])
                                                  (cons label (patch-block block))))]))
 
-(define (generate-prelude)
+(define (generate-prelude stack-space)
   (Block '()
          (list (Instr 'pushq (list (Reg 'rbp)))
                (Instr 'movq (list (Reg 'rsp) (Reg 'rbp)))
-               (Instr 'subq (list (Imm 16) (Reg 'rsp)))
+               (Instr 'subq (list (Imm stack-space) (Reg 'rsp)))
                (Jmp 'start))))
 
-(define (generate-conclusion)
+(define (generate-conclusion stack-space)
   (Block '()
-         (list (Instr 'addq (list (Imm 16) (Reg 'rsp)))
+         (list (Instr 'addq (list (Imm stack-space) (Reg 'rsp)))
                (Instr 'popq (list (Reg 'rbp)))
                (Retq))))
 
 (define (prelude-and-conclusion p)
   (match p
     [(X86Program info blocks)
-     (define prelude (generate-prelude))
-     (define conclusion (generate-conclusion))
+     (define stack-space (dict-ref info 'stack-space))
+     (define prelude (generate-prelude stack-space))
+     (define conclusion (generate-conclusion stack-space))
      (X86Program info (dict-set* blocks
                                  'main prelude
                                  'conclusion conclusion))]))
